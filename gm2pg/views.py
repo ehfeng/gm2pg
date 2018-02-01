@@ -2,6 +2,7 @@ import base64
 import httplib2
 import json
 import os
+import re
 
 from apiclient.discovery import build
 from flask import (
@@ -106,3 +107,13 @@ def logout():
 def sync():
     current_user.sync_inbox()
     return 'hi'
+
+@app.route('/replies')
+def replies():
+    result = db.engine.execute("select distinct sender from message where thread_id in (select thread_id from message group by thread_id having count(1) > 1) and thread_id not in (select thread_id from message where sender like '%%mailer-daemon@googlemail.com%%' or sender like '%%postmaster%%') and sender not like '%%sentry.io%%';")
+    output = []
+    r = re.compile('.+?<(.+?)>')
+
+    for row in result:
+        output.append(r.search(row[0]).group(1))
+    return '<h1>People who replied</h1><pre>' + '\n'.join(output) + '</pre>'

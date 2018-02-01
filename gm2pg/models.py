@@ -59,29 +59,29 @@ class User(db.Model, UserMixin):
 
         next_page_token = None
         while True:
-            result = self.gmail.users().messages().list(userId='me', labelIds=self.customer_label_id, pageToken=next_page_token).execute()
+            thread_result = self.gmail.users().threads().list(userId='me', labelIds=self.customer_label_id, pageToken=next_page_token).execute()
+            for thread in thread_result['threads']:
 
-            for message in result['messages']:
-                data = self.gmail.users().messages().get(userId='me', id=message['id'], format='metadata').execute()
+                for message in self.gmail.users().threads().get(userId='me', id=thread['id']).execute()['messages']:
+                    data = self.gmail.users().messages().get(userId='me', id=message['id'], format='metadata').execute()
 
-                msg = Message(
-                    gmail_id=data['id'],
-                    internal_date=datetime.fromtimestamp(int(data['internalDate']) / 1e3),
-                    snippet=data['snippet'],
-                    subject=[x for x in data['payload']['headers'] if x['name'] == 'Subject'][0]['value'],
-                    sender=[x for x in data['payload']['headers'] if x['name'] == 'From'][0]['value'],
-                    recipient=[x for x in data['payload']['headers'] if x['name'] == 'To'][0]['value'],
-                    )
-                thread = Thread.query.filter_by(gmail_id=data['threadId']).first()
-                if not thread:
-                    thread = Thread(gmail_id=data['threadId'], user_id=self.id,)
-                msg.thread = thread
-                db.session.add(msg)
-                db.session.add(thread)
-                # label_ids = data['labelIds']
+                    msg = Message(
+                        gmail_id=data['id'],
+                        internal_date=datetime.fromtimestamp(int(data['internalDate']) / 1e3),
+                        snippet=data['snippet'],
+                        subject=[x for x in data['payload']['headers'] if x['name'] == 'Subject'][0]['value'],
+                        sender=[x for x in data['payload']['headers'] if x['name'] == 'From'][0]['value'],
+                        recipient=[x for x in data['payload']['headers'] if x['name'] == 'To'][0]['value'],
+                        )
+                    thread = Thread.query.filter_by(gmail_id=data['threadId']).first()
+                    if not thread:
+                        thread = Thread(gmail_id=data['threadId'], user_id=self.id,)
+                    msg.thread = thread
+                    db.session.add(msg)
+                    db.session.add(thread)
 
-            if result.get('nextPageToken'):
-                next_page_token = result['nextPageToken']
+            if thread_result.get('nextPageToken'):
+                next_page_token = thread_result['nextPageToken']
             else:
                 db.session.commit()
                 break
@@ -89,12 +89,6 @@ class User(db.Model, UserMixin):
         # pull history_id
         # save latest
         # setup notifications
-
-
-labels = db.Table('labels',
-    db.Column('message_id', db.Integer, db.ForeignKey('message.id')),
-    db.Column('label_id', db.Integer, db.ForeignKey('label.id'))
-)
 
 
 class Message(db.Model):
@@ -111,9 +105,6 @@ class Message(db.Model):
 
     thread_id = db.Column(db.Integer, db.ForeignKey('thread.id'), nullable=False)
 
-    labels = db.relationship('Label', secondary=labels,
-        backref=db.backref('messages', lazy='dynamic'))
-
 
 class Thread(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -123,9 +114,3 @@ class Thread(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     messages = db.relationship('Message', backref='thread', lazy='dynamic')
-
-
-class Label(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    gmail_id = db.Column(db.Text)
-    name = db.Column(db.Text)
