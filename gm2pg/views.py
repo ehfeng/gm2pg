@@ -105,12 +105,21 @@ def logout():
 
 @app.route('/sync')
 def sync():
+    threads = Thread.query.filter_by(user_id=current_user.id).all()
+    for thread in threads:
+        Message.query.filter_by(thread_id=thread.id).delete()
+        db.session.delete(thread)
+    db.session.commit()
     current_user.sync_inbox()
-    return 'hi'
+    return redirect(url_for('replies'))
+
 
 @app.route('/replies')
+@login_required
 def replies():
-    result = db.engine.execute("select distinct sender from message where thread_id in (select thread_id from message group by thread_id having count(1) > 1) and thread_id not in (select thread_id from message where sender like '%%mailer-daemon@googlemail.com%%' or sender like '%%postmaster%%') and sender not like '%%sentry.io%%';")
+    query =  "select distinct sender from message where thread_id in (select thread_id from message group by thread_id having count(1) > 1) and thread_id not in (select thread_id from message where sender like '%%%%mailer-daemon@googlemail.com%%%%' or sender like '%%%%postmaster%%%%') and sender not like '%%%%sentry.io%%%%' and thread_id in (select id from thread where user_id=%d);" % current_user.id
+    result = db.engine.execute(query)
+
     output = []
     r = re.compile('.+?<(.+?)>')
 
